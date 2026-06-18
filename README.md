@@ -28,10 +28,12 @@ This repo currently contains the **frontend flow** — landing, wallet auth, and
 | Landing / intro | `public/index.html` | Built |
 | Wallet auth | `public/auth.html` | Built |
 | Game lobby | `public/lobby.html` | Built |
-| Game canvas | — | Not started |
+| Game canvas | `public/game.html` | Built (frontend simulation — see note below) |
 | Smart contracts (Move) | — | Not started |
 | Walrus integration | — | Not started |
 | AI agent layer | — | Not started |
+
+**Note on `game.html`:** this is a fully playable frontend simulation — movement, all 6 tasks, kill/vent/report/emergency, meetings, voting, win conditions — running entirely client-side with simulated AI opponents. It is not yet wired to a real multiplayer backend, Sui contracts, or Walrus persistence. That wiring is the next phase.
 
 ## Running locally
 
@@ -43,7 +45,9 @@ python3 -m http.server 8000
 # visit http://localhost:8000
 ```
 
-Flow: `index.html` → tap to play → intro animation → `auth.html` → connect wallet → `lobby.html`.
+Flow: `index.html` → tap to play → intro animation → `auth.html` → connect wallet → `lobby.html` → start game → role reveal → `game.html` (live game canvas).
+
+You can also jump straight into a test round at `game.html?role=crewmate` or `game.html?role=impostor`.
 
 ## Design language
 

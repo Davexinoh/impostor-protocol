@@ -1238,8 +1238,11 @@ function startCountdown(){
 }
 
 /* ── ROLE REVEAL ── */
+let assignedRole = 'crewmate';
+
 function showRole(){
   const imp=Math.random()>0.65;
+  assignedRole = imp ? 'impostor' : 'crewmate';
   const bean=document.getElementById('rr-bean');
   const visor=document.getElementById('rr-visor');
   const glow=document.getElementById('rr-glow');
@@ -1276,7 +1279,7 @@ function showRole(){
 
 function enterGame(){
   document.getElementById('role-reveal').classList.remove('on');
-  alert('🚀 Entering The Ledger…\n\nGame canvas is the next build.');
+  window.location.href = `game.html?role=${assignedRole}`;
 }
 
 /* ── SIMULATE JOIN ── */
