@@ -1,0 +1,24 @@
+{
+  "name": "impostor-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Social deduction on Sui — Among Us with persistent identity, real stakes, and AI opponents. Built for Sui Overflow 2026.",
+  "scripts": {
+    "dev": "cd public && python3 -m http.server 8000",
+    "serve": "cd public && python3 -m http.server 8000"
+  },
+  "keywords": [
+    "sui",
+    "walrus",
+    "web3",
+    "game",
+    "social-deduction",
+    "hackathon"
+  ],
+  "author": "Dave (Davexinoh)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Davexinoh/impostor-protocol.git"
+  }
+}
