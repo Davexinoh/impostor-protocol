@@ -29,16 +29,18 @@ This repo currently contains the **frontend flow** — landing, wallet auth, and
 | Wallet auth | `public/auth.html` | Built |
 | Game lobby | `public/lobby.html` | Built |
 | Game canvas | `public/game.html` | Built (frontend simulation — see note below) |
-| Smart contracts (Move) | — | Not started |
-| Walrus integration | — | Not started |
-| AI agent layer | — | Not started |
+| WebSocket server | `server/` | Built — not yet deployed |
+| Smart contracts (Move) | `contracts/` | Built (4/4) — not yet deployed |
+| Walrus integration | `server/walrus.js` | Built — real HTTP client, not yet tested against live testnet |
+| AI agent layer | `server/gameState.js` (tickAI) | Built — simple state machine, no Claude API dialogue yet |
 
-**Note on `game.html`:** this is a fully playable frontend simulation — movement, all 6 tasks, kill/vent/report/emergency, meetings, voting, win conditions — running entirely client-side with simulated AI opponents. It is not yet wired to a real multiplayer backend, Sui contracts, or Walrus persistence. That wiring is the next phase.
+**Note on `game.html`:** the frontend game canvas currently runs its own local simulation (movement, tasks, kills, AI opponents) entirely client-side. The WebSocket server in `server/` is built and ready but **not yet wired into `game.html`** — that integration (replacing local simulation with real server-authoritative state) is the next step before deployment.
+
+**Track:** submitting under **Walrus** only. The Agentic Web work (AI agents in `server/gameState.js`, `server/walrus.js` agent memory functions) stays in the codebase and supports the Walrus story — AI agent memory is itself a Walrus persistence use case — but is not the track being judged.
 
 ## Running locally
 
-These are static HTML files with no build step. Just open them in a browser, or serve the `public/` folder:
-
+**Frontend** (static, no build step):
 ```bash
 cd public
 python3 -m http.server 8000
@@ -48,6 +50,21 @@ python3 -m http.server 8000
 Flow: `index.html` → tap to play → intro animation → `auth.html` → connect wallet → `lobby.html` → start game → role reveal → `game.html` (live game canvas).
 
 You can also jump straight into a test round at `game.html?role=crewmate` or `game.html?role=impostor`.
+
+**Server** (WebSocket game server):
+```bash
+cd server
+npm install
+cp .env.example .env   # fill in contract addresses after deploying
+npm run dev
+```
+
+**Contracts** (Sui Move):
+```bash
+cd contracts
+./deploy.sh
+```
+See `contracts/README.md` for full deployment details and what to do with the output.
 
 ## Design language
 
