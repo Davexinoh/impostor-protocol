@@ -29,6 +29,7 @@ This repo currently contains the **frontend flow** — landing, wallet auth, and
 | Wallet auth | `public/auth.html` | Built — wallet address is mocked (random hex), real wallet extension integration not done |
 | Game lobby | `public/lobby.html` | Built — **wired to the real WebSocket server** |
 | Game canvas | `public/game.html` | Built — **wired to the real WebSocket server** |
+| Profile / achievements | `public/profile.html` | Built — reputation is live (`GET /rep/:wallet`); achievements and match history show honest locked/empty state until a per-wallet history endpoint exists (see Known gaps) |
 | WebSocket server | `server/` | Built — not yet deployed |
 | Smart contracts (Move) | `contracts/` | Built (4/4) — not yet deployed |
 | Walrus integration | `server/walrus.js` | Built — real HTTP client, not yet tested against live testnet |
@@ -94,6 +95,16 @@ Dark, brutal, terminal-on-a-dying-ship aesthetic. Bebas Neue for display type, S
 **Walrus (primary, $35K 1st):** Session state snapshots, AI agent memory, full match replay — all stored on Walrus as the permanent, verifiable record of every game played.
 
 **Agentic Web (secondary, $30K 1st):** AI agents with persistent Walrus memory fill lobbies, play full games, and participate in meetings via Claude API.
+
+## Known gaps
+
+Honest list of what's mocked or missing, consolidated from comments scattered across the codebase:
+
+- **Wallet connection is mocked.** `auth.html` generates a random hex string instead of calling a real Sui Wallet / Suiet / Ethos browser extension. Everything downstream (lobby, game, server, contracts) treats that string as if it were a real address.
+- **No per-wallet history endpoint.** The server can tell you a wallet's current reputation (`GET /rep/:wallet`) but has no way to list "all achievements earned by wallet X" or "all matches played by wallet X" — match replays are saved to Walrus per-room but never indexed by player. `profile.html` shows an honest locked/empty state rather than fabricating this data.
+- **Nothing is deployed.** The server runs locally only; the Move contracts are written and have a deploy script but haven't been published to testnet.
+- **AI dialogue is a state machine, not Claude API.** `server/gameState.js`'s `tickAI()` makes simple proximity-based decisions (wander, complete nearby task, kill nearby crewmate). It doesn't generate natural-language meeting arguments yet.
+- **Walrus integration is untested against live testnet.** `server/walrus.js` is a real HTTP client built against Walrus's documented API shape, but has not yet been run against the actual testnet aggregator/publisher.
 
 ## Team
 
