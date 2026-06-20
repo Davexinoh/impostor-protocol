@@ -27,14 +27,18 @@ This repo currently contains the **frontend flow** — landing, wallet auth, and
 |---|---|---|
 | Landing / intro | `public/index.html` | Built |
 | Wallet auth | `public/auth.html` | Built |
-| Game lobby | `public/lobby.html` | Built |
-| Game canvas | `public/game.html` | Built (frontend simulation — see note below) |
+| Game lobby | `public/lobby.html` | Built — UI only, **not yet wired to the server** |
+| Game canvas | `public/game.html` | Built — **wired to the real WebSocket server** (see note below) |
 | WebSocket server | `server/` | Built — not yet deployed |
 | Smart contracts (Move) | `contracts/` | Built (4/4) — not yet deployed |
 | Walrus integration | `server/walrus.js` | Built — real HTTP client, not yet tested against live testnet |
 | AI agent layer | `server/gameState.js` (tickAI) | Built — simple state machine, no Claude API dialogue yet |
 
-**Note on `game.html`:** the frontend game canvas currently runs its own local simulation (movement, tasks, kills, AI opponents) entirely client-side. The WebSocket server in `server/` is built and ready but **not yet wired into `game.html`** — that integration (replacing local simulation with real server-authoritative state) is the next step before deployment.
+**Note on `game.html`:** this page now supports two modes:
+- **Online** — pass `?room=CODE&wallet=0x..&name=You&color=%23117f2d` in the URL and it connects to the real server in `server/`: real movement sync, server-validated kills/tasks/votes, server-driven AI, Walrus reconnect.
+- **Offline** — no `?room=` param falls back to the original local simulation (useful for quick visual iteration without running the server).
+
+**Known gap:** `lobby.html` is still a UI-only mockup — it doesn't call `room:create`/`room:join` on the server, so the room code and player list you see there aren't real yet. `enterGame()` passes whatever room code is on screen through to `game.html`, but until the lobby itself is wired, that code won't correspond to an actual server room. Wiring the lobby the same way `game.html` was wired is the next task.
 
 **Track:** submitting under **Walrus** only. The Agentic Web work (AI agents in `server/gameState.js`, `server/walrus.js` agent memory functions) stays in the codebase and supports the Walrus story — AI agent memory is itself a Walrus persistence use case — but is not the track being judged.
 
@@ -49,7 +53,9 @@ python3 -m http.server 8000
 
 Flow: `index.html` → tap to play → intro animation → `auth.html` → connect wallet → `lobby.html` → start game → role reveal → `game.html` (live game canvas).
 
-You can also jump straight into a test round at `game.html?role=crewmate` or `game.html?role=impostor`.
+**Offline test** (no server needed): `game.html?role=crewmate` or `game.html?role=impostor`
+
+**Online test** (server must be running, see below): `game.html?room=TESTROOM&wallet=0xabc123&name=Dave&color=%23117f2d` — open it twice with different `wallet`/`name` values in two tabs to simulate two real players in the same room.
 
 **Server** (WebSocket game server):
 ```bash

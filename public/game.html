@@ -623,6 +623,7 @@ body::before{
 .win-btn.secondary{border-color:rgba(0,196,180,0.4);background:rgba(0,196,180,0.05);}
 .win-btn.secondary:hover{background:rgba(0,196,180,0.12);}
 </style>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
 
@@ -769,10 +770,21 @@ body::before{
 
 <script>
 /* ════════════════════════════════════
-   ROLE / GAME STATE
+   SERVER CONNECTION
+   game.html?room=XVNT-8842&wallet=0x...&name=You&color=%23117f2d
+   If no room code is given, falls back to local offline mode
+   (useful for quick design iteration without the server running).
 ════════════════════════════════════ */
 const params = new URLSearchParams(window.location.search);
-const ROLE = params.get('role') === 'impostor' ? 'impostor' : 'crewmate';
+const ROOM_CODE   = params.get('room');
+const MY_WALLET   = params.get('wallet') || '0x' + Math.random().toString(16).slice(2, 10);
+const MY_NAME     = params.get('name')   || 'You';
+const MY_COLOR    = params.get('color')  || '#117f2d';
+const SERVER_URL  = params.get('server') || window.SERVER_URL || 'http://localhost:3001';
+const OFFLINE     = !ROOM_CODE; // no room code = local simulation fallback
+
+let socket = null;
+let ROLE = params.get('role') === 'impostor' ? 'impostor' : 'crewmate'; // overwritten by server on game:roleAssigned
 
 const STATE = {
   role: ROLE,
@@ -784,7 +796,191 @@ const STATE = {
   emergencyUsed: false,
   inMeeting: false,
   inTask: false,
+  connected: false,
 };
+// NOTE: actual socket connection happens at the bottom of this file,
+// after every function/variable below has been declared. See "CONNECT
+// TO SERVER (deferred)" near the end. This avoids referencing TASKS,
+// PLAYERS, you, CHAT_LOG etc. before they exist.
+
+/* ════════════════════════════════════
+   SOCKET EVENT BRIDGE
+   Every event the server can send, mapped onto the existing
+   UI functions defined further down this file. This is the seam
+   between "real multiplayer" and the rendering/UI code that was
+   originally written for the local simulation.
+════════════════════════════════════ */
+function setupSocketListeners(){
+  socket.on('connect', () => {
+    STATE.connected = true;
+    console.log('[net] connected:', socket.id);
+    you.id = socket.id; // our local player object adopts our real socket id
+
+    // Join (or rejoin) the room we were given in the URL
+    const savedBlob = sessionStorage.getItem(`ip_blob_${ROOM_CODE}`);
+    if (savedBlob) {
+      socket.emit('room:reconnect', { code: ROOM_CODE, wallet: MY_WALLET, blobId: savedBlob });
+    } else {
+      socket.emit('room:join', { code: ROOM_CODE, wallet: MY_WALLET, name: MY_NAME, color: MY_COLOR });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    STATE.connected = false;
+    console.warn('[net] disconnected — server may attempt to hold your slot for 90s');
+  });
+
+  socket.on('error', ({ msg }) => {
+    console.error('[net] server error:', msg);
+  });
+
+  /* ── ROOM LIFECYCLE ── */
+  socket.on('room:joined', ({ player, room }) => {
+    you.id = player.id; you.name = player.name; you.col = player.color;
+    syncPlayersFromServer(room.players);
+  });
+
+  socket.on('room:reconnected', ({ player, room, snapshot }) => {
+    if (player) { you.id = player.id; ROLE = player.role; STATE.role = ROLE; setupRoleHud(); }
+    syncPlayersFromServer(room.players);
+    if (snapshot) console.log('[walrus] resumed from snapshot taken at', new Date(snapshot.timestamp));
+  });
+
+  socket.on('room:playerJoined', ({ room }) => syncPlayersFromServer(room.players));
+  socket.on('room:update',       ({ players }) => syncPlayersFromServer(players));
+
+  socket.on('room:promoted', ({ msg }) => console.log('[net]', msg));
+
+  /* ── GAME START ── */
+  socket.on('game:roleAssigned', ({ role, color }) => {
+    ROLE = role; STATE.role = role; you.col = color;
+    STATE.killCooldown = role === 'impostor' ? 0 : null;
+    setupRoleHud();
+    if (role !== 'impostor') renderTaskPanel();
+  });
+
+  socket.on('game:started', (room) => {
+    syncPlayersFromServer(room.players);
+    STATE.tasksDone = room.tasksDone || 0;
+    updateTaskHud();
+  });
+
+  /* ── LIVE TICK — authoritative positions, tasks, cooldowns ── */
+  socket.on('game:tick', (room) => {
+    syncPlayersFromServer(room.players);
+
+    if (room.killCooldowns && room.killCooldowns[socket.id] !== undefined) {
+      STATE.killCooldown = Math.max(0, Math.round(room.killCooldowns[socket.id]));
+      const cdText = document.getElementById('cd-text');
+      if (cdText) cdText.textContent = STATE.killCooldown > 0 ? `Kill in ${STATE.killCooldown}s` : 'Kill ready';
+    }
+
+    // keep local task `done` flags in sync so the task panel renders correctly
+    if (room.tasks) {
+      room.tasks.forEach(rt => {
+        const local = TASKS.find(t => t.id === rt.id);
+        if (local) local.done = rt.done;
+      });
+    }
+
+    // bodies broadcast by server replace our locally-tracked list
+    if (room.deadBodies) {
+      DEAD_BODIES.length = 0;
+      room.deadBodies.forEach(b => DEAD_BODIES.push(b));
+    }
+  });
+
+  /* ── ACTIONS — server-confirmed results ── */
+  socket.on('game:killed', ({ victim, body }) => {
+    document.getElementById('kill-flash').classList.add('flash');
+    setTimeout(() => document.getElementById('kill-flash').classList.remove('flash'), 400);
+    console.log(`[game] ${victim} was killed`);
+  });
+
+  socket.on('game:vented', ({ x, y }) => {
+    you.x = x; you.y = y;
+    flashScreen('rgba(0,196,180,0.25)');
+  });
+
+  socket.on('game:taskUpdate', ({ tasksDone, total }) => {
+    STATE.tasksDone = tasksDone; STATE.tasksTotal = total;
+    renderTaskPanel();
+    updateTaskHud();
+    document.getElementById('task-status').textContent = '✓ TASK COMPLETE';
+    document.getElementById('task-status').style.color = 'var(--teal)';
+  });
+
+  socket.on('player:disconnecting', ({ name, countdown }) => {
+    console.warn(`[net] ${name} disconnected — ${countdown}s to reconnect before replaced`);
+  });
+
+  socket.on('player:disconnected', ({ name }) => {
+    console.warn(`[net] ${name} did not reconnect in time`);
+  });
+
+  /* ── MEETINGS ── */
+  socket.on('meeting:start', ({ reason, state, timer }) => {
+    syncPlayersFromServer(state.players);
+    openMeeting(reason, false);
+    const timerEl = document.getElementById('meet-timer');
+    timerEl.textContent = timer; timerEl.classList.remove('urgent');
+  });
+
+  socket.on('meeting:tick', ({ timer }) => {
+    const timerEl = document.getElementById('meet-timer');
+    timerEl.textContent = Math.max(0, timer);
+    timerEl.classList.toggle('urgent', timer <= 10);
+  });
+
+  socket.on('meeting:message', (msg) => {
+    CHAT_LOG.push({ ...msg, you: msg.name === you.name });
+    renderMeetChat();
+  });
+
+  socket.on('meeting:votecast', ({ voteCount, total }) => {
+    console.log(`[meeting] ${voteCount}/${total} votes cast`);
+  });
+
+  socket.on('meeting:result', ({ ejected }) => {
+    STATE.inMeeting = false;
+    document.getElementById('meeting').classList.remove('on');
+    document.getElementById('cast-vote-btn').disabled = true;
+    document.getElementById('cast-vote-btn').textContent = 'CAST VOTE';
+
+    if (ejected) {
+      const local = PLAYERS.find(p => p.id === ejected.id) || { ...ejected, isYou: ejected.id === you.id };
+      local.alive = false;
+      local.impostor = ejected.wasImpostor; // safe to reveal post-ejection
+      showEjectResult(local);
+    }
+    // win/no-win decision arrives separately via game:end if the game is over
+  });
+
+  socket.on('game:resume', (room) => {
+    syncPlayersFromServer(room.players);
+  });
+
+  /* ── GAME END ── */
+  socket.on('game:end', ({ winningSide, reason, myRole, repDelta, achievements }) => {
+    triggerWin(winningSide, reason);
+    const repEl = document.getElementById('ws-rep');
+    repEl.textContent = (repDelta >= 0 ? '+' : '') + repDelta;
+    repEl.style.color = repDelta >= 0 ? 'var(--teal)' : 'var(--red)';
+
+    if (achievements && achievements.length) {
+      console.log('[achievements] earned:', achievements);
+    }
+  });
+
+  socket.on('achievement:minted', ({ achievement, nftId }) => {
+    console.log(`[sui] Achievement minted: ${achievement.name} (${nftId})`);
+  });
+
+  socket.on('replay:saved', ({ blobId }) => {
+    console.log(`[walrus] Match replay archived: ${blobId}`);
+    sessionStorage.setItem(`ip_replay_${ROOM_CODE}`, blobId);
+  });
+}
 
 /* role HUD setup */
 function setupRoleHud(){
@@ -875,17 +1071,24 @@ function updateTaskHud(){
 }
 
 /* ════════════════════════════════════
-   PLAYERS (you + AI crew/impostors)
+   PLAYERS (you + real players + AI)
+   In online mode this is populated/kept in sync by server broadcasts
+   (game:started, game:tick). In offline mode it's a static fixture.
 ════════════════════════════════════ */
 const COLS=['#c51111','#132ed1','#117f2d','#ed54ba','#ef7d0e','#f0f0f0','#6b2fbb'];
 
-const PLAYERS=[
+let PLAYERS = OFFLINE ? [
   {id:'you', name:'You', col: ROLE==='impostor'?'#c51111':'#117f2d', x:.5, y:.7, alive:true, isYou:true, impostor:ROLE==='impostor'},
   {id:'p1', name:'0xBlue',  col:'#132ed1', x:.2, y:.2, alive:true, isYou:false, impostor:false, vx:0,vy:0, targetRoom:0},
   {id:'p2', name:'0xPink',  col:'#ed54ba', x:.7, y:.25, alive:true, isYou:false, impostor:false, vx:0,vy:0, targetRoom:1},
   {id:'p3', name:'AI-7749', col:'#ef7d0e', x:.4, y:.6, alive:true, isYou:false, impostor:ROLE!=='impostor', vx:0,vy:0, targetRoom:2},
   {id:'p4', name:'0xGold',  col:'#d4a844', x:.85,y:.6, alive:true, isYou:false, impostor:false, vx:0,vy:0, targetRoom:3},
+] : [
+  // Online mode starts with just you — server fills in the rest on game:started
+  {id:'you', name: MY_NAME, col: MY_COLOR, x:.5, y:.7, alive:true, isYou:true, impostor:false},
 ];
+
+function getYou(){ return PLAYERS.find(p => p.isYou); }
 
 /* ════════════════════════════════════
    CANVAS SETUP
@@ -934,7 +1137,7 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
-const you=PLAYERS[0];
+let you=PLAYERS[0];
 const SPEED=0.0042;
 
 function updateMovement(){
@@ -947,10 +1150,43 @@ function updateMovement(){
   if(dx!==0&&dy!==0){dx*=0.707;dy*=0.707;}
   you.x=Math.max(0.02,Math.min(0.98,you.x+dx*SPEED));
   you.y=Math.max(0.04,Math.min(0.97,you.y+dy*SPEED));
+
+  // Online mode: tell the server where we are. Server is authoritative —
+  // it will correct us via game:tick if anything's ever out of sync.
+  if(!OFFLINE && socket && (dx!==0||dy!==0)){
+    socket.emit('player:move', { x: you.x, y: you.y });
+  }
 }
 
-/* simple AI wander for other players */
+/* ── SYNC LOCAL PLAYERS FROM SERVER STATE ──
+   Called on every game:tick / room:update broadcast. Merges server's
+   authoritative player list into our local PLAYERS array, preserving
+   the `you` reference and avoiding jank from a full array replace. */
+function syncPlayersFromServer(serverPlayers){
+  if(!serverPlayers) return;
+  serverPlayers.forEach(sp=>{
+    let local = PLAYERS.find(p=>p.id===sp.id);
+    if(!local){
+      local = { id: sp.id, isYou: sp.id===socket.id };
+      PLAYERS.push(local);
+    }
+    // Don't overwrite our own predicted position with server's slightly-stale one
+    // unless we're not the one moving (avoids visible rubber-banding).
+    if(!local.isYou){
+      local.x = sp.x; local.y = sp.y;
+    }
+    local.name = sp.name; local.col = sp.color;
+    local.alive = sp.alive; local.isAI = sp.isAI;
+  });
+  // Drop players the server no longer lists (left/disconnected pre-game)
+  PLAYERS = PLAYERS.filter(p => p.isYou || serverPlayers.some(sp=>sp.id===p.id));
+  you = PLAYERS.find(p=>p.isYou) || you;
+}
+
+/* simple AI wander — OFFLINE MODE ONLY. In online mode, the server's
+   tickAI() drives AI players and we just render their broadcast positions. */
 function updateAI(t){
+  if(!OFFLINE) return;
   PLAYERS.slice(1).forEach((p,i)=>{
     if(!p.alive)return;
     p.vx=Math.sin(t*0.3+i*2)*0.0012;
@@ -1037,7 +1273,13 @@ function tryUse(){
 
 function tryVent(){
   if(!nearVent||ROLE!=='impostor'||!you.alive)return;
-  // teleport to random other vent
+
+  if(!OFFLINE && socket){
+    socket.emit('game:vent'); // server picks the destination and confirms via game:vented
+    return;
+  }
+
+  // OFFLINE: teleport to random other vent locally
   const others=VENTS.filter(v=>dist(you.x,you.y,v.x,v.y)>0.06);
   if(others.length){
     const dest=others[Math.floor(Math.random()*others.length)];
@@ -1048,6 +1290,14 @@ function tryVent(){
 
 function tryKill(){
   if(!nearKillTarget||ROLE!=='impostor'||STATE.killCooldown>0||!you.alive)return;
+
+  if(!OFFLINE && socket){
+    // Server validates range/cooldown/role and broadcasts game:killed on success.
+    socket.emit('game:kill', { targetId: nearKillTarget.id });
+    return;
+  }
+
+  // OFFLINE: resolve the kill locally
   const victim=nearKillTarget;
   victim.alive=false;
   DEAD_BODIES.push({x:victim.x,y:victim.y,name:victim.name,col:victim.col});
@@ -1059,11 +1309,23 @@ function tryKill(){
 
 function tryReport(){
   if(!nearBody||!you.alive)return;
+
+  if(!OFFLINE && socket){
+    socket.emit('game:report', { bodyVictimId: nearBody.victimId });
+    return; // server broadcasts meeting:start on success
+  }
+
   openMeeting(`${nearBody.name}'s body was found`, true);
 }
 
 function callEmergency(){
   if(STATE.emergencyUsed||STATE.inMeeting||STATE.inTask||!you.alive)return;
+
+  if(!OFFLINE && socket){
+    socket.emit('game:emergency'); // server validates one-use-per-game and broadcasts meeting:start
+    return;
+  }
+
   STATE.emergencyUsed=true;
   openMeeting('Emergency meeting called by You', false);
 }
@@ -1076,15 +1338,19 @@ function flashScreen(color){
 }
 
 /* ════════════════════════════════════
-   KILL COOLDOWN TICK
+   KILL COOLDOWN TICK — OFFLINE MODE ONLY
+   In online mode, cooldown comes from the server's killCooldowns map
+   on every game:tick broadcast (see handleServerTick below).
 ════════════════════════════════════ */
-setInterval(()=>{
-  if(ROLE==='impostor' && STATE.killCooldown>0 && !STATE.inMeeting){
-    STATE.killCooldown=Math.max(0,STATE.killCooldown-1);
-    const cdText=document.getElementById('cd-text');
-    cdText.textContent = STATE.killCooldown>0 ? `Kill in ${STATE.killCooldown}s` : 'Kill ready';
-  }
-},1000);
+if(OFFLINE){
+  setInterval(()=>{
+    if(ROLE==='impostor' && STATE.killCooldown>0 && !STATE.inMeeting){
+      STATE.killCooldown=Math.max(0,STATE.killCooldown-1);
+      const cdText=document.getElementById('cd-text');
+      cdText.textContent = STATE.killCooldown>0 ? `Kill in ${STATE.killCooldown}s` : 'Kill ready';
+    }
+  },1000);
+}
 
 /* ════════════════════════════════════
    TASK MINIGAMES
@@ -1110,6 +1376,14 @@ function closeTask(){
 }
 
 function completeTask(task){
+  if(!OFFLINE && socket){
+    // Server validates proximity/role and broadcasts game:taskUpdate to everyone.
+    // We optimistically close the modal; the HUD updates when the broadcast arrives.
+    socket.emit('game:taskComplete', { taskId: task.id });
+    setTimeout(closeTask,700);
+    return;
+  }
+
   task.done=true;
   STATE.tasksDone++;
   document.getElementById('task-status').textContent='✓ TASK COMPLETE';
@@ -1379,6 +1653,12 @@ function openMeeting(reason,isReport){
   renderQuickRow();
   renderMeetChat(MEET_CHAT_SEED.slice());
 
+  if(!OFFLINE){
+    // Online: server owns the timer and sends meeting:tick / meeting:message /
+    // meeting:result broadcasts. We just render whatever it tells us.
+    return;
+  }
+
   let t=30;
   const timerEl=document.getElementById('meet-timer');
   timerEl.textContent=t; timerEl.classList.remove('urgent');
@@ -1393,7 +1673,7 @@ function openMeeting(reason,isReport){
     }
   },1000);
 
-  // AI sends a couple lines during discussion
+  // AI sends a couple lines during discussion — OFFLINE simulation only
   [1800,3400,5200].forEach(delay=>{
     setTimeout(()=>{
       if(!STATE.inMeeting)return;
@@ -1433,6 +1713,13 @@ document.getElementById('meet-inp').addEventListener('keydown',e=>{
 function sendMeetChat(){
   const inp=document.getElementById('meet-inp');
   const txt=inp.value.trim(); if(!txt)return;
+
+  if(!OFFLINE && socket){
+    socket.emit('meeting:chat', { text: txt });
+    inp.value='';
+    return; // server echoes it back via meeting:message, including to us
+  }
+
   CHAT_LOG.push({name:'You',col:you.col,text:txt,you:true});
   renderMeetChat();
   inp.value='';
@@ -1446,6 +1733,10 @@ function renderQuickRow(){
     const b=document.createElement('button');
     b.className='qa-btn'; b.textContent=p;
     b.onclick=()=>{
+      if(!OFFLINE && socket){
+        socket.emit('meeting:chat', { text: p });
+        return;
+      }
       CHAT_LOG.push({name:'You',col:you.col,text:p,you:true});
       renderMeetChat();
     };
@@ -1491,6 +1782,14 @@ function renderVoteGrid(){
 function castVote(){
   document.getElementById('cast-vote-btn').disabled=true;
   document.getElementById('cast-vote-btn').textContent='VOTE LOCKED';
+
+  if(!OFFLINE && socket){
+    // Server tallies all votes and broadcasts meeting:result when everyone's
+    // voted (or its own timer expires). We don't resolve anything locally.
+    socket.emit('meeting:vote', { targetId: selectedVote });
+    return;
+  }
+
   clearInterval(meetTimerInt);
   setTimeout(resolveMeeting,1200);
 }
@@ -1556,6 +1855,7 @@ function closeEject(){
    WIN CONDITIONS
 ════════════════════════════════════ */
 function checkWinConditions(){
+  if(!OFFLINE) return; // server is authoritative — see game:end listener
   const aliveImpostors=PLAYERS.filter(p=>p.alive&&p.impostor).length;
   const aliveCrew=PLAYERS.filter(p=>p.alive&&!p.impostor).length;
 
@@ -1768,6 +2068,19 @@ function drawMinimap(){
 }
 
 render();
+
+/* ════════════════════════════════════
+   CONNECT TO SERVER (deferred)
+   Runs last — every function and variable referenced inside
+   setupSocketListeners() (TASKS, PLAYERS, you, CHAT_LOG, etc.)
+   is guaranteed to exist by this point in the file.
+════════════════════════════════════ */
+if (!OFFLINE) {
+  socket = io(SERVER_URL, { transports: ['websocket'], reconnectionAttempts: 5 });
+  setupSocketListeners();
+} else {
+  console.warn('[net] No ?room= param — running OFFLINE local simulation. Pass ?room=CODE&wallet=0x..&name=YourName&color=%23117f2d to connect to a real server.');
+}
 </script>
 </body>
 </html>

@@ -1279,7 +1279,13 @@ function showRole(){
 
 function enterGame(){
   document.getElementById('role-reveal').classList.remove('on');
-  window.location.href = `game.html?role=${assignedRole}`;
+  // NOTE: lobby.html is not yet wired to the real server (see server/index.js) —
+  // the room code below is still the hardcoded lobby mockup value (XVNT-8842).
+  // game.html itself IS fully wired: pass a real ?room=<code> once this lobby
+  // creates/joins rooms via Socket.io instead of faking it.
+  const roomCodeEl = document.querySelector('.room-code');
+  const roomCode = roomCodeEl ? roomCodeEl.textContent.trim() : '';
+  window.location.href = `game.html?role=${assignedRole}&room=${encodeURIComponent(roomCode)}&name=You`;
 }
 
 /* ── SIMULATE JOIN ── */
