@@ -1091,19 +1091,28 @@ function selMode(el){
 }
 
 /* ── CONNECT ── */
+let connectedWallet = null;
+
 function doConnect(){
   const btn=document.getElementById('conn-btn');
   btn.classList.add('loading');
   btn.querySelector('.c-lbl').textContent='CONNECTING…';
   setTimeout(()=>{
     const addr='0x'+Array.from({length:4},()=>Math.floor(Math.random()*0xffff).toString(16).padStart(4,'0')).join('')+'…'+Math.floor(Math.random()*0xffff).toString(16).padStart(4,'0');
+    connectedWallet = addr;
     document.getElementById('s-addr').textContent=addr;
     document.getElementById('success').classList.add('active');
   },1800);
 }
 
 function toLobby(){
-  window.location.href='lobby.html';
+  // NOTE: this is still a mocked wallet address (see doConnect above) —
+  // real wallet integration (Sui Wallet / Suiet / Ethos browser extension)
+  // is not yet implemented. The address is passed through so the rest of
+  // the flow (lobby → game) has something real and consistent to use.
+  const wallet = connectedWallet || ('0x' + Math.random().toString(16).slice(2, 10));
+  const params = new URLSearchParams({ wallet, name: 'You' });
+  window.location.href = `lobby.html?${params.toString()}`;
 }
 
 /* ── LIVE COUNT ── */

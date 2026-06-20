@@ -800,6 +800,7 @@ body::before{
   box-shadow:0 0 40px rgba(232,18,44,0.2);
 }
 </style>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
 
@@ -971,6 +972,106 @@ body::before{
 </div>
 
 <script>
+/* ════════════════════════════════════
+   SERVER CONNECTION
+   lobby.html?wallet=0x..&name=You&room=CODE&server=http://...
+   - wallet/name come from auth.html
+   - room is optional: if present, JOIN that room; if absent, CREATE one
+   - no wallet at all = OFFLINE fallback (original mockup behavior)
+════════════════════════════════════ */
+const lobbyParams = new URLSearchParams(window.location.search);
+const MY_WALLET   = lobbyParams.get('wallet');
+const MY_NAME     = lobbyParams.get('name') || 'You';
+const JOIN_CODE   = lobbyParams.get('room');
+const SERVER_URL  = lobbyParams.get('server') || window.SERVER_URL || 'http://localhost:3001';
+const LOBBY_OFFLINE = !MY_WALLET; // no wallet param = run the old local mockup
+
+let lobbySocket = null;
+let myPlayerId = null;
+let isHost = false;
+let currentRoomCode = JOIN_CODE || null;
+
+/* ════════════════════════════════════
+   LOBBY SOCKET BRIDGE
+   Mirrors the same pattern used in game.html: every server event
+   maps onto the existing render functions defined further down.
+   Declared as functions (hoisted) so call order below doesn't matter.
+════════════════════════════════════ */
+function setupLobbySocketListeners(){
+  lobbySocket.on('connect', () => {
+    myPlayerId = lobbySocket.id;
+    const myColor = '#117f2d';
+    if (JOIN_CODE) {
+      lobbySocket.emit('room:join', { code: JOIN_CODE, wallet: MY_WALLET, name: MY_NAME, color: myColor });
+    } else {
+      lobbySocket.emit('room:create', { wallet: MY_WALLET, name: MY_NAME, color: myColor, mode: 'casual', stake: 0 });
+    }
+  });
+
+  lobbySocket.on('error', ({ msg }) => {
+    console.error('[net]', msg);
+    alert(`Lobby error: ${msg}`);
+  });
+
+  lobbySocket.on('room:created', ({ code, player, room }) => {
+    isHost = true;
+    currentRoomCode = code;
+    myPlayerId = player.id;
+    document.querySelector('.room-code').textContent = code;
+    syncLobbyPlayersFromServer(room.players);
+  });
+
+  lobbySocket.on('room:joined', ({ player, room }) => {
+    myPlayerId = player.id;
+    if (currentRoomCode) document.querySelector('.room-code').textContent = currentRoomCode;
+    syncLobbyPlayersFromServer(room.players);
+    document.getElementById('start-btn').title = 'Only the host can start the game';
+  });
+
+  lobbySocket.on('room:playerJoined', ({ room }) => syncLobbyPlayersFromServer(room.players));
+  lobbySocket.on('room:update',       ({ players: p }) => syncLobbyPlayersFromServer(p));
+
+  lobbySocket.on('room:promoted', ({ msg }) => {
+    isHost = true;
+    console.log('[net]', msg);
+    CHAT.push({ type:'sys', cls:'join', text: `// ${msg}` });
+    renderChat();
+  });
+
+  lobbySocket.on('lobby:message', (msg) => {
+    CHAT.push({ type:'msg', name: msg.name, col: msg.color, text: msg.text, you: msg.name === MY_NAME });
+    renderChat();
+  });
+
+  lobbySocket.on('game:roleAssigned', ({ role }) => {
+    assignedRole = role; // consumed by showRole() when the countdown finishes
+  });
+}
+
+/* ── SYNC LOBBY PLAYER LIST FROM SERVER ──
+   Replaces the local fake `players` array with real server data,
+   keeping the same shape renderPlayers() already expects. */
+function syncLobbyPlayersFromServer(serverPlayers){
+  players = serverPlayers.map(p => ({
+    name: p.id === myPlayerId ? 'You' : p.name,
+    addr: p.id === myPlayerId ? MY_WALLET : (p.isAI ? p.id : p.id.slice(0,6)+'…'+p.id.slice(-4)),
+    rep: 1000, // live rep comes from GET /rep/:wallet — not wired into this UI yet
+    col: p.color,
+    you: p.id === myPlayerId,
+    ready: p.ready,
+    ai: p.isAI,
+  }));
+  while (players.length < 10) players.push(null);
+  renderPlayers();
+}
+
+if (!LOBBY_OFFLINE) {
+  lobbySocket = io(SERVER_URL, { transports: ['websocket'], reconnectionAttempts: 5 });
+  setupLobbySocketListeners();
+} else {
+  console.warn('[net] No ?wallet= param — running OFFLINE lobby mockup. Arrive here from auth.html to connect for real.');
+}
+
 /* ── STARS ── */
 const bgC=document.getElementById('bg-canvas');
 const bgX=bgC.getContext('2d');
@@ -1106,14 +1207,17 @@ function adj(k,d){
   document.getElementById('sv-cooldown').textContent=sv.cooldown+'s';
 }
 
-/* ── PLAYERS ── */
+/* ── PLAYERS ──
+   OFFLINE: static fixture matching the original mockup.
+   ONLINE: starts empty — syncLobbyPlayersFromServer() populates this
+   the moment room:created / room:joined arrives. */
 const COLS=['#c51111','#132ed1','#117f2d','#ed54ba','#ef7d0e','#f0f0f0','#6b2fbb','#38fedc'];
-let players=[
+let players = LOBBY_OFFLINE ? [
   {name:'You',addr:'0x4f2a…c91b',rep:1000,col:'#117f2d',you:true,ready:false,ai:false},
   {name:'0xBlue',addr:'0x8811…aa04',rep:1842,col:'#132ed1',you:false,ready:true,ai:false},
   {name:'AI-7749',addr:'0xAI01…7749',rep:950,col:'#c51111',you:false,ready:true,ai:true},
   null,null,null,null,null,null,null
-];
+] : new Array(10).fill(null);
 
 function renderPlayers(){
   const el=document.getElementById('p-list');el.innerHTML='';
@@ -1143,19 +1247,24 @@ function renderPlayers(){
   document.getElementById('pcount').textContent=count;
   const sb=document.getElementById('start-btn');
   const sh=document.getElementById('start-hint');
-  sb.disabled=count<4;
-  sh.textContent=count<4?`Waiting for ${4-count} more…`:'Host only — start when ready';
+  // Online mode: only the host can ever start, regardless of count
+  const canStart = count>=4 && (LOBBY_OFFLINE || isHost);
+  sb.disabled=!canStart;
+  if(!LOBBY_OFFLINE && !isHost && count>=4) sh.textContent='Waiting for host to start…';
+  else sh.textContent=count<4?`Waiting for ${4-count} more…`:'Host only — start when ready';
 }
 renderPlayers();
 
-/* ── CHAT ── */
-const CHAT=[
+/* ── CHAT ──
+   OFFLINE: seeded with fake history matching the original mockup.
+   ONLINE: starts empty — real messages arrive via lobby:message. */
+const CHAT = LOBBY_OFFLINE ? [
   {type:'sys',cls:'join',text:'// 0x8811…aa04 boarded the ship'},
   {type:'sys',cls:'join',text:'// AI-7749 assigned to fill lobby'},
   {type:'msg',name:'0xBlue',col:'#132ed1',text:'lets run it',you:false},
   {type:'sys',cls:'info',text:'// Game code: XVNT-8842 · Share with crew'},
   {type:'msg',name:'You',col:'#117f2d',text:'ready when 4+',you:true},
-];
+] : [];
 
 const AI_REPLIES=['sus 👀','who did reactor?','i was in electrical','not me fr','check security cams','we running ranked?','trust nobody in this lobby'];
 
@@ -1191,6 +1300,13 @@ document.getElementById('chat-inp').addEventListener('keydown',e=>{
 function sendChat(){
   const inp=document.getElementById('chat-inp');
   const txt=inp.value.trim();if(!txt)return;
+
+  if(!LOBBY_OFFLINE && lobbySocket){
+    lobbySocket.emit('lobby:chat', { text: txt });
+    inp.value='';
+    return; // server echoes back via lobby:message, including to us
+  }
+
   CHAT.push({type:'msg',name:'You',col:'#117f2d',text:txt,you:true});
   renderChat();inp.value='';
   if(Math.random()>0.35){
@@ -1211,7 +1327,15 @@ function toggleReady(){
   btn.innerHTML=isReady
     ?`<svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> READY`
     :`<svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" fill="none" stroke-width="2.5"><circle cx="12" cy="12" r="9"/></svg> READY UP`;
-  players[0].ready=isReady;
+
+  if(!LOBBY_OFFLINE && lobbySocket){
+    if(isReady) lobbySocket.emit('player:ready');
+    // server's room:update broadcast will refresh `players` and re-render
+    return;
+  }
+
+  const me = players.find(p=>p && p.you);
+  if(me) me.ready=isReady;
   renderPlayers();
   CHAT.push({type:'sys',cls:isReady?'join':'leave',text:`// You are ${isReady?'ready':'not ready'}`});
   renderChat();
@@ -1219,7 +1343,8 @@ function toggleReady(){
 
 /* ── COPY CODE ── */
 function copyCode(){
-  navigator.clipboard?.writeText('XVNT-8842').catch(()=>{});
+  const code = currentRoomCode || document.querySelector('.room-code').textContent.trim();
+  navigator.clipboard?.writeText(code).catch(()=>{});
   const h=document.getElementById('copy-hint');
   h.textContent='copied!';h.style.color='var(--teal)';
   setTimeout(()=>{h.textContent='copy';h.style.color='';},2000);
@@ -1227,6 +1352,14 @@ function copyCode(){
 
 /* ── COUNTDOWN ── */
 function startCountdown(){
+  if(!LOBBY_OFFLINE && lobbySocket){
+    if(!isHost){ alert('Only the host can start the game.'); return; }
+    lobbySocket.emit('game:start', { impostorCount: sv.impostors });
+    // game:roleAssigned listener (set up above) stores the real role into
+    // `assignedRole` the moment the server responds — well before this
+    // 3-second countdown finishes, so showRole() below has real data.
+  }
+
   document.getElementById('cdown').classList.add('on');
   let n=3;
   const el=document.getElementById('cd-num');
@@ -1237,12 +1370,19 @@ function startCountdown(){
   },1000);
 }
 
-/* ── ROLE REVEAL ── */
+/* ── ROLE REVEAL ──
+   OFFLINE: randomly guesses a role (original mockup behavior).
+   ONLINE: assignedRole was already set for real by the game:roleAssigned
+   socket listener — we just render whatever it is here. */
 let assignedRole = 'crewmate';
 
 function showRole(){
-  const imp=Math.random()>0.65;
-  assignedRole = imp ? 'impostor' : 'crewmate';
+  if(LOBBY_OFFLINE){
+    const imp=Math.random()>0.65;
+    assignedRole = imp ? 'impostor' : 'crewmate';
+  }
+  const imp = assignedRole === 'impostor';
+
   const bean=document.getElementById('rr-bean');
   const visor=document.getElementById('rr-visor');
   const glow=document.getElementById('rr-glow');
@@ -1279,16 +1419,30 @@ function showRole(){
 
 function enterGame(){
   document.getElementById('role-reveal').classList.remove('on');
-  // NOTE: lobby.html is not yet wired to the real server (see server/index.js) —
-  // the room code below is still the hardcoded lobby mockup value (XVNT-8842).
-  // game.html itself IS fully wired: pass a real ?room=<code> once this lobby
-  // creates/joins rooms via Socket.io instead of faking it.
+
+  if(!LOBBY_OFFLINE){
+    // Online: reuse the exact same socket connection's room — game.html opens
+    // its own socket and re-joins by wallet, so we just need wallet/name/room.
+    const params = new URLSearchParams({
+      role: assignedRole,
+      room: currentRoomCode || '',
+      wallet: MY_WALLET,
+      name: MY_NAME,
+      server: SERVER_URL,
+    });
+    window.location.href = `game.html?${params.toString()}`;
+    return;
+  }
+
+  // OFFLINE fallback — original mockup behavior
   const roomCodeEl = document.querySelector('.room-code');
   const roomCode = roomCodeEl ? roomCodeEl.textContent.trim() : '';
   window.location.href = `game.html?role=${assignedRole}&room=${encodeURIComponent(roomCode)}&name=You`;
 }
 
-/* ── SIMULATE JOIN ── */
+/* ── SIMULATE JOIN — OFFLINE MODE ONLY ──
+   In online mode, real player joins arrive via room:playerJoined. */
+if(LOBBY_OFFLINE){
 setTimeout(()=>{
   players[3]={name:'0xPink',addr:'0xde12…f441',rep:2310,col:'#ed54ba',you:false,ready:false,ai:false};
   renderPlayers();
@@ -1301,6 +1455,7 @@ setTimeout(()=>{
   CHAT.push({type:'msg',name:'0xPink',col:'#ed54ba',text:'finally lol, let\'s go',you:false});
   renderChat();
 },6500);
+} // end if(LOBBY_OFFLINE)
 </script>
 </body>
 </html>
