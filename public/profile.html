@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Profile — Impostor Protocol</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+
+:root{
+  --black:  #050508;
+  --deep:   #08080f;
+  --panel:  #0a0a14;
+  --red:    #e8122c;
+  --red2:   #ff1f3d;
+  --teal:   #00c4b4;
+  --teal2:  #00e5d0;
+  --gold:   #d4a844;
+  --gold2:  #f0c869;
+  --white:  #c8c8d0;
+  --white2: #eeeef5;
+  --muted:  #3a3a50;
+  --muted2: #5a5a78;
+}
+
+html,body{
+  width:100%;min-height:100vh;
+  background:var(--black);
+  color:var(--white);
+  font-family:'Barlow Condensed',sans-serif;
+  overflow-x:hidden;
+}
+
+body::after{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+  background-size:200px 200px;opacity:0.025;
+  pointer-events:none;z-index:9999;
+}
+body::before{
+  content:'';position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px);
+  pointer-events:none;z-index:9998;
+}
+
+#bg-canvas{position:fixed;inset:0;width:100%;height:100%;z-index:0;}
+
+.fog-tl{
+  position:fixed;left:-150px;top:-100px;width:600px;height:600px;
+  background:radial-gradient(circle,rgba(212,168,68,0.07) 0%,transparent 60%);
+  pointer-events:none;z-index:1;animation:fp 9s ease-in-out infinite;
+}
+.fog-br{
+  position:fixed;right:-150px;bottom:-100px;width:600px;height:600px;
+  background:radial-gradient(circle,rgba(0,196,180,0.07) 0%,transparent 60%);
+  pointer-events:none;z-index:1;animation:fp 7s ease-in-out 3s infinite;
+}
+@keyframes fp{0%,100%{transform:scale(1);}50%{transform:scale(1.12);}}
+
+.page{position:relative;z-index:2;max-width:1180px;margin:0 auto;padding:32px 28px 80px;}
+
+/* ── TOPBAR (matches lobby/game) ── */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:48px;padding-bottom:20px;
+  border-bottom:1px solid rgba(0,196,180,0.1);
+}
+
+.tb-logo{display:flex;align-items:center;gap:10px;text-decoration:none;}
+.tb-skull{
+  width:26px;height:26px;border:1px solid rgba(232,18,44,0.5);
+  display:flex;align-items:center;justify-content:center;
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
+  background:rgba(232,18,44,0.07);
+}
+.tb-skull svg{width:13px;height:13px;}
+.tb-name{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:0.1em;color:var(--white2);}
+.tb-name span{color:var(--red);}
+
+.tb-back{
+  font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--muted2);
+  text-decoration:none;letter-spacing:0.06em;transition:color 0.2s;
+}
+.tb-back:hover{color:var(--white2);}
+
+/* ── PROFILE HEADER ── */
+.profile-header{
+  display:grid;grid-template-columns:auto 1fr auto;gap:32px;
+  align-items:center;margin-bottom:56px;
+}
+
+.profile-bean-wrap{position:relative;width:84px;height:110px;flex-shrink:0;}
+.profile-ring{
+  position:absolute;inset:-14px;border-radius:50%;
+  border:1px solid rgba(0,196,180,0.25);
+  animation:ring-pulse 3s ease-in-out infinite;
+}
+@keyframes ring-pulse{0%,100%{transform:scale(1);opacity:.5;}50%{transform:scale(1.06);opacity:1;}}
+
+.profile-bean{width:100%;height:100%;background:#117f2d;border-radius:40% 40% 28% 28% / 55% 55% 32% 32%;position:relative;}
+.profile-bean::after{content:'';position:absolute;width:36%;height:52%;top:4%;right:-19%;background:#0b5522;border-radius:40% 60% 60% 40%;}
+.profile-visor{position:absolute;width:54%;height:30%;top:13%;left:8%;border-radius:50%;background:rgba(200,235,255,0.9);}
+
+.profile-id{}
+.profile-name{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;color:var(--white2);line-height:1;margin-bottom:8px;}
+.profile-addr{
+  font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--teal);
+  background:rgba(0,196,180,0.06);border:1px solid rgba(0,196,180,0.2);
+  padding:5px 14px;display:inline-block;letter-spacing:0.06em;
+  clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px);
+}
+
+.profile-rep{text-align:right;}
+.rep-num{font-family:'Bebas Neue',sans-serif;font-size:48px;color:var(--teal);letter-spacing:1px;line-height:1;}
+.rep-lbl{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--muted2);letter-spacing:0.2em;text-transform:uppercase;margin-top:4px;}
+
+/* ── STAT STRIP ── */
+.stat-strip{
+  display:grid;grid-template-columns:repeat(5,1fr);
+  border-top:1px solid rgba(0,196,180,0.1);
+  border-bottom:1px solid rgba(0,196,180,0.1);
+  margin-bottom:64px;
+}
+.stat-cell{padding:20px 16px;text-align:center;border-right:1px solid rgba(255,255,255,0.05);}
+.stat-cell:last-child{border-right:none;}
+.stat-cell .n{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--white2);letter-spacing:0.5px;display:block;}
+.stat-cell .n.t{color:var(--teal);}
+.stat-cell .n.r{color:var(--red);}
+.stat-cell .l{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--muted2);letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;display:block;}
+
+/* ── SECTION LABEL ── */
+.sec-label{
+  font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--gold);
+  letter-spacing:0.25em;text-transform:uppercase;margin-bottom:6px;
+  display:flex;align-items:center;gap:10px;
+}
+.sec-label::after{content:'';flex:1;height:1px;background:linear-gradient(to right,rgba(212,168,68,0.3),transparent);}
+
+.sec-title{
+  font-family:'Bebas Neue',sans-serif;font-size:clamp(28px,4vw,42px);
+  letter-spacing:0.02em;color:var(--white2);margin-bottom:40px;line-height:1;
+}
+
+/* ════════════════════════════════════
+   ACHIEVEMENT GALLERY — the signature element
+   Tilted, overlapping, bracket-cut-corner cards with an inner
+   glow — borrowed structural grammar from the Dribbble reference,
+   re-skinned with our crewmate beans and onchain achievement data.
+════════════════════════════════════ */
+.gallery{
+  position:relative;
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:28px;
+  margin-bottom:72px;
+  padding:20px 0 40px;
+}
+
+.ach-card{
+  position:relative;
+  background:var(--panel);
+  border:1px solid rgba(255,255,255,0.08);
+  clip-path:polygon(18px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px);
+  padding:0;
+  overflow:hidden;
+  transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), border-color 0.3s;
+  cursor:default;
+}
+
+/* slight alternating tilt — the "tilted gallery" feeling from reference,
+   tamed down so it stays legible rather than gimmicky */
+.gallery .ach-card:nth-child(odd)  { transform: rotate(-1.2deg) translateY(4px); }
+.gallery .ach-card:nth-child(even) { transform: rotate(1.2deg)  translateY(-4px); }
+
+.ach-card:hover{
+  transform: rotate(0deg) translateY(-6px) scale(1.03);
+  z-index:5;
+}
+
+.ach-card.locked{ opacity:0.4; filter:saturate(0.3); }
+.ach-card.locked:hover{ opacity:0.6; transform: rotate(0deg) translateY(-2px); }
+
+/* top accent bar — gold for earned, muted for locked */
+.ach-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(to right, var(--gold), transparent);
+  z-index:2;
+}
+.ach-card.locked::before{ background:linear-gradient(to right, var(--muted2), transparent); }
+
+/* inner glow stage — where the bean "sits" lit from below, same
+   structural idea as the glowing helmet/sword renders in the reference */
+.ach-stage{
+  position:relative;
+  height:150px;
+  display:flex;align-items:center;justify-content:center;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 75%, rgba(212,168,68,0.18) 0%, transparent 70%);
+  border-bottom:1px solid rgba(255,255,255,0.06);
+  overflow:hidden;
+}
+.ach-card.locked .ach-stage{
+  background: radial-gradient(ellipse 70% 60% at 50% 75%, rgba(255,255,255,0.04) 0%, transparent 70%);
+}
+
+.ach-stage::after{
+  content:'';position:absolute;bottom:0;left:10%;right:10%;height:30px;
+  background:radial-gradient(ellipse, rgba(212,168,68,0.35) 0%, transparent 75%);
+  filter:blur(2px);
+}
+.ach-card.locked .ach-stage::after{ background:radial-gradient(ellipse, rgba(255,255,255,0.08) 0%, transparent 75%); }
+
+.ach-bean{
+  position:relative;width:56px;height:74px;
+  border-radius:40% 40% 28% 28% / 55% 55% 32% 32%;
+  z-index:2;
+  animation:bean-float 3.5s ease-in-out infinite;
+}
+@keyframes bean-float{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+
+.ach-bean::after{content:'';position:absolute;width:36%;height:52%;top:4%;right:-19%;border-radius:40% 60% 60% 40%;background:inherit;filter:brightness(0.55);}
+.ach-bean .av{position:absolute;width:54%;height:30%;top:13%;left:8%;border-radius:50%;}
+
+.ach-lock-icon{
+  position:absolute;z-index:3;width:28px;height:28px;
+  display:flex;align-items:center;justify-content:center;
+}
+.ach-lock-icon svg{width:22px;height:22px;stroke:var(--muted2);fill:none;stroke-width:1.6;}
+
+.ach-body{padding:18px 18px 20px;}
+
+.ach-name{
+  font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:0.04em;
+  color:var(--white2);margin-bottom:8px;line-height:1.1;
+}
+.ach-card.locked .ach-name{ color:var(--muted2); }
+
+.ach-desc{
+  font-family:'Barlow Condensed',sans-serif;font-size:12.5px;font-weight:300;
+  color:var(--muted2);line-height:1.5;margin-bottom:14px;min-height:48px;
+}
+
+.ach-meta{
+  display:flex;align-items:center;justify-content:space-between;
+  padding-top:12px;border-top:1px solid rgba(255,255,255,0.05);
+}
+
+.ach-badge{
+  font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:0.12em;
+  text-transform:uppercase;padding:3px 9px;
+  clip-path:polygon(4px 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%,0 4px);
+}
+.ach-badge.earned{background:rgba(212,168,68,0.1);color:var(--gold);border:1px solid rgba(212,168,68,0.3);}
+.ach-badge.locked{background:rgba(255,255,255,0.03);color:var(--muted2);border:1px solid rgba(255,255,255,0.08);}
+
+.ach-date{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--muted2);letter-spacing:0.04em;}
+
+/* ════════════════════════════════════
+   MATCH HISTORY — replay list
+════════════════════════════════════ */
+.match-list{display:flex;flex-direction:column;gap:10px;margin-bottom:64px;}
+
+.match-row{
+  display:grid;grid-template-columns:auto 1fr auto auto auto;gap:20px;
+  align-items:center;padding:16px 20px;
+  background:rgba(255,255,255,0.015);
+  border:1px solid rgba(255,255,255,0.06);
+  clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  transition:border-color 0.2s, background 0.2s;
+}
+.match-row:hover{border-color:rgba(0,196,180,0.25);background:rgba(0,196,180,0.03);}
+
+.match-result{
+  width:8px;height:36px;border-radius:1px;
+}
+.match-result.win{background:var(--teal);box-shadow:0 0 8px rgba(0,196,180,0.5);}
+.match-result.loss{background:var(--red);box-shadow:0 0 8px rgba(232,18,44,0.4);}
+
+.match-info{}
+.match-role{
+  font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:0.05em;
+  color:var(--white2);margin-bottom:2px;
+}
+.match-role .tag{font-size:11px;font-family:'Share Tech Mono',monospace;letter-spacing:0.08em;margin-left:8px;}
+.match-role .tag.imp{color:var(--red);}
+.match-role .tag.crew{color:var(--teal);}
+.match-sub{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--muted2);letter-spacing:0.04em;}
+
+.match-stat{text-align:center;}
+.match-stat .v{font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--white);}
+.match-stat .k{font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--muted2);letter-spacing:0.1em;text-transform:uppercase;}
+
+.match-rep{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:0.04em;}
+.match-rep.pos{color:var(--teal);}
+.match-rep.neg{color:var(--red);}
+
+.match-replay-btn{
+  font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:0.08em;
+  color:var(--muted2);border:1px solid rgba(255,255,255,0.1);
+  padding:7px 14px;background:transparent;cursor:pointer;
+  clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px);
+  transition:all 0.15s;white-space:nowrap;
+}
+.match-replay-btn:hover{border-color:var(--teal);color:var(--teal);background:rgba(0,196,180,0.05);}
+
+/* ── EMPTY STATE ── */
+.empty-note{
+  font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--muted2);
+  text-align:center;padding:40px 0;letter-spacing:0.06em;
+}
+
+@media (max-width: 980px){
+  .gallery{grid-template-columns:repeat(2,1fr);}
+  .stat-strip{grid-template-columns:repeat(3,1fr);}
+  .profile-header{grid-template-columns:auto 1fr;}
+  .profile-rep{grid-column:1/-1;text-align:left;margin-top:8px;}
+  .match-row{grid-template-columns:auto 1fr auto;}
+  .match-stat,.match-replay-btn{display:none;}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<div class="fog-tl"></div>
+<div class="fog-br"></div>
+
+<div class="page">
+
+  <div class="topbar">
+    <a class="tb-logo" href="lobby.html">
+      <div class="tb-skull">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#e8122c" stroke-width="1.5">
+          <path d="M12 3C7.03 3 3 7.03 3 12c0 2.74 1.18 5.2 3.06 6.92V21h11.88v-2.08A8.97 8.97 0 0021 12c0-4.97-4.03-9-9-9z"/>
+          <circle cx="9" cy="11" r="1.5" fill="#e8122c" stroke="none"/>
+          <circle cx="15" cy="11" r="1.5" fill="#e8122c" stroke="none"/>
+        </svg>
+      </div>
+      <span class="tb-name">IMPOSTOR <span>PROTOCOL</span></span>
+    </a>
+    <a class="tb-back" href="lobby.html">← Back to lobby</a>
+  </div>
+
+  <!-- PROFILE HEADER -->
+  <div class="profile-header">
+    <div class="profile-bean-wrap">
+      <div class="profile-ring"></div>
+      <div class="profile-bean"><div class="profile-visor"></div></div>
+    </div>
+    <div class="profile-id">
+      <h1 class="profile-name" id="p-name">You</h1>
+      <span class="profile-addr" id="p-addr">0x4f2a…c91b</span>
+    </div>
+    <div class="profile-rep">
+      <div class="rep-num" id="p-rep">1,000</div>
+      <div class="rep-lbl">Onchain Reputation</div>
+    </div>
+  </div>
+
+  <!-- STAT STRIP -->
+  <div class="stat-strip" id="stat-strip">
+    <div class="stat-cell"><span class="n" id="s-games">0</span><span class="l">Games</span></div>
+    <div class="stat-cell"><span class="n t" id="s-crewwin">0</span><span class="l">Crew Wins</span></div>
+    <div class="stat-cell"><span class="n r" id="s-impwin">0</span><span class="l">Impostor Wins</span></div>
+    <div class="stat-cell"><span class="n" id="s-tasks">—</span><span class="l">Task Rate</span></div>
+    <div class="stat-cell"><span class="n" id="s-kills">0</span><span class="l">Kills</span></div>
+  </div>
+
+  <!-- ACHIEVEMENT GALLERY -->
+  <p class="sec-label">// Onchain achievements</p>
+  <h2 class="sec-title">Proof of your<br>greatest moments.</h2>
+
+  <div class="gallery" id="gallery"></div>
+
+  <!-- MATCH HISTORY -->
+  <p class="sec-label">// Walrus archive</p>
+  <h2 class="sec-title">Match history.</h2>
+
+  <div class="match-list" id="match-list"></div>
+  <p class="empty-note" id="empty-note" style="display:none;">// No matches yet — play your first game to start building your record</p>
+
+</div>
+
+<script>
+/* ── BACKGROUND STARS (consistent with lobby/game) ── */
+const bgC=document.getElementById('bg-canvas');
+const bgX=bgC.getContext('2d');
+const stars=Array.from({length:160},()=>({
+  x:Math.random(),y:Math.random(),r:Math.random()*1.3+0.2,
+  a:Math.random()*0.6+0.1,ph:Math.random()*Math.PI*2,sp:Math.random()*0.005+0.002
+}));
+function rsBg(){bgC.width=window.innerWidth;bgC.height=document.body.scrollHeight;}
+rsBg();window.addEventListener('resize',rsBg);
+(function ab(){
+  requestAnimationFrame(ab);
+  const W=bgC.width,H=bgC.height;
+  bgX.clearRect(0,0,W,H);
+  stars.forEach(s=>{
+    s.ph+=s.sp;
+    const a=s.a*(0.3+0.7*Math.sin(s.ph));
+    bgX.beginPath();bgX.arc(s.x*W,s.y*H,s.r,0,Math.PI*2);
+    bgX.fillStyle=`rgba(255,255,255,${a})`;bgX.fill();
+  });
+})();
+
+/* ════════════════════════════════════
+   ACHIEVEMENT DEFINITIONS
+   Mirrors server/sui.js ACHIEVEMENTS exactly — same id, name, desc.
+   Colors chosen per-achievement to differentiate the gallery visually.
+════════════════════════════════════ */
+const ACHIEVEMENTS = [
+  { id:0, key:'PERFECT_CREWMATE', name:'Perfect Crewmate', desc:'Complete all tasks, never suspected, correct vote.', col:'#117f2d', visor:'rgba(200,235,255,0.9)' },
+  { id:1, key:'GHOST_PROTOCOL',   name:'Ghost Protocol',   desc:'Win as impostor without a single vote against you.', col:'#c51111', visor:'#e8122c' },
+  { id:2, key:'CLUTCH_FIX',       name:'Clutch Fix',       desc:'Fix reactor or O2 alone with under 5 seconds left.', col:'#d4a844', visor:'rgba(200,235,255,0.9)' },
+  { id:3, key:'SUS_LORD',         name:'Sus Lord',         desc:'Ejected incorrectly 10 times — crew is always wrong about you.', col:'#6b2fbb', visor:'rgba(200,235,255,0.9)' },
+];
+
+/* ════════════════════════════════════
+   DATA SOURCE
+   Reads wallet from URL (?wallet=0x..), fetches real stats from the
+   server's REST endpoints if available. Falls back to a clean empty
+   state (NOT fake numbers) if the server isn't reachable — this page
+   should never lie about a player's record.
+════════════════════════════════════ */
+const params = new URLSearchParams(window.location.search);
+const WALLET = params.get('wallet');
+const SERVER_URL = params.get('server') || window.SERVER_URL || 'http://localhost:3001';
+
+let earnedAchievements = []; // populated from server if available
+let matches = [];
+
+async function loadProfile(){
+  document.getElementById('p-addr').textContent = WALLET || 'Not connected';
+
+  if(!WALLET){
+    renderGallery();
+    renderMatches();
+    return;
+  }
+
+  try{
+    const res = await fetch(`${SERVER_URL}/rep/${WALLET}`);
+    const data = await res.json();
+    if(data.ok || data.score !== undefined){
+      document.getElementById('p-rep').textContent = (data.score ?? 1000).toLocaleString();
+    }
+  }catch(e){
+    console.warn('[profile] could not reach server for reputation — showing default', e.message);
+  }
+
+  // NOTE: there is no REST endpoint yet for "all achievements earned by
+  // wallet X" or "all matches played by wallet X" — server/index.js only
+  // exposes /rep/:wallet and /replay/:blobId today. Until that's added,
+  // this page intentionally shows an empty/locked state rather than
+  // fabricating data, per the "never lie about a player's record" rule
+  // above. See README "Known gaps" for this as a tracked next step.
+
+  renderGallery();
+  renderMatches();
+}
+
+function renderGallery(){
+  const el = document.getElementById('gallery');
+  el.innerHTML = '';
+  ACHIEVEMENTS.forEach(a=>{
+    const earned = earnedAchievements.includes(a.key);
+    const card = document.createElement('div');
+    card.className = 'ach-card' + (earned ? '' : ' locked');
+    card.innerHTML = `
+      <div class="ach-stage">
+        ${earned ? `
+          <div class="ach-bean" style="background:${a.col}">
+            <div class="av" style="background:${a.visor}"></div>
+          </div>
+        ` : `
+          <span class="ach-lock-icon">
+            <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+          </span>
+        `}
+      </div>
+      <div class="ach-body">
+        <div class="ach-name">${a.name}</div>
+        <div class="ach-desc">${a.desc}</div>
+        <div class="ach-meta">
+          <span class="ach-badge ${earned?'earned':'locked'}">${earned?'Earned':'Locked'}</span>
+          <span class="ach-date">${earned?'Onchain':'—'}</span>
+        </div>
+      </div>
+    `;
+    el.appendChild(card);
+  });
+}
+
+function renderMatches(){
+  const el = document.getElementById('match-list');
+  const empty = document.getElementById('empty-note');
+  el.innerHTML = '';
+
+  if(!matches.length){
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  matches.forEach(m=>{
+    const row = document.createElement('div');
+    row.className = 'match-row';
+    row.innerHTML = `
+      <div class="match-result ${m.won?'win':'loss'}"></div>
+      <div class="match-info">
+        <div class="match-role">${m.role==='impostor'?'Impostor':'Crewmate'}<span class="tag ${m.role==='impostor'?'imp':'crew'}">${m.won?'WON':'LOST'}</span></div>
+        <div class="match-sub">${m.roomCode} · ${m.date}</div>
+      </div>
+      <div class="match-stat"><span class="v">${m.kills}</span><span class="k">Kills</span></div>
+      <div class="match-stat"><span class="v">${m.tasks}/6</span><span class="k">Tasks</span></div>
+      <div class="match-rep ${m.repDelta>=0?'pos':'neg'}">${m.repDelta>=0?'+':''}${m.repDelta}</div>
+      <button class="match-replay-btn" onclick="window.open('${m.replayUrl||'#'}','_blank')">▶ Replay</button>
+    `;
+    el.appendChild(row);
+  });
+}
+
+loadProfile();
+</script>
+</body>
+</html>

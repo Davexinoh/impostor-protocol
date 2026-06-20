@@ -169,6 +169,7 @@ body::before{
   padding:5px 12px;
   clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px);
   cursor:pointer;transition:border-color 0.2s;
+  text-decoration:none; /* now an <a> linking to profile.html */
 }
 .w-chip:hover{border-color:rgba(0,196,180,0.25);}
 
@@ -836,11 +837,11 @@ body::before{
         <div class="net-dot"></div>
         <span class="net-txt">Sui Testnet</span>
       </div>
-      <div class="w-chip">
+      <a class="w-chip" id="wallet-chip-link" href="profile.html">
         <div class="w-bean"></div>
-        <span class="w-addr">0x4f2a…c91b</span>
-        <span class="w-rep">1,000 REP</span>
-      </div>
+        <span class="w-addr" id="w-addr-display">0x4f2a…c91b</span>
+        <span class="w-rep" id="w-rep-display">1,000 REP</span>
+      </a>
     </div>
   </div>
 
@@ -1068,6 +1069,24 @@ function syncLobbyPlayersFromServer(serverPlayers){
 if (!LOBBY_OFFLINE) {
   lobbySocket = io(SERVER_URL, { transports: ['websocket'], reconnectionAttempts: 5 });
   setupLobbySocketListeners();
+
+  // Reflect the real connected wallet in the topbar chip + profile link
+  const chipLink = document.getElementById('wallet-chip-link');
+  const addrDisplay = document.getElementById('w-addr-display');
+  const repDisplay = document.getElementById('w-rep-display');
+  if (chipLink && MY_WALLET) {
+    chipLink.href = `profile.html?wallet=${encodeURIComponent(MY_WALLET)}&server=${encodeURIComponent(SERVER_URL)}`;
+    addrDisplay.textContent = MY_WALLET.length > 12 ? MY_WALLET.slice(0,6)+'…'+MY_WALLET.slice(-4) : MY_WALLET;
+
+    // Pull real reputation instead of showing the hardcoded "1,000 REP" fixture
+    fetch(`${SERVER_URL}/rep/${MY_WALLET}`)
+      .then(r => r.json())
+      .then(data => {
+        const score = data.score ?? 1000;
+        repDisplay.textContent = `${score.toLocaleString()} REP`;
+      })
+      .catch(() => { /* server unreachable — leave the 1,000 default visible */ });
+  }
 } else {
   console.warn('[net] No ?wallet= param — running OFFLINE lobby mockup. Arrive here from auth.html to connect for real.');
 }
